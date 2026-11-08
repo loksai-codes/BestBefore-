@@ -1,0 +1,52 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "client": {
+    "drop_excess_requests": false,
+    "enable_logging": true
+  },
+  "providers": {
+    "groq": {
+      "keys": [
+        {
+          "name": "groq-primary",
+          "value": "env.GROQ_API_KEY",
+          "models": [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768"
+          ],
+          "weight": 1.0
+        }
+      ]
+    }
+  },
+  "fallbacks": [
+    {
+      "from": "groq/llama-3.3-70b-versatile",
+      "to": [
+        "groq/llama-3.1-8b-instant"
+      ]
+    },
+    {
+      "from": "llama-3.3-70b-versatile",
+      "to": [
+        "llama-3.1-8b-instant"
+      ]
+    }
+  ],
+  "plugins": [
+    {
+      "name": "semantic_cache",
+      "enabled": true,
+      "config": {
+        "ttl": "1h",
+        "cache_by_model": true,
+        "cache_by_provider": true
+      }
+    }
+  ],
+  "config_store": {
+    "enabled": false
+  }
+}
+
