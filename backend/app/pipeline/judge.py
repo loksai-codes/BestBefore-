@@ -1,9 +1,12 @@
+import logging
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.llm.gateway import BifrostGatewayClient, GatewayStatsCollector
 from app.pipeline.scoring import calculate_claim_freshness
 from app.schemas import Claim, Evidence, ScoreBreakdown, Verdict
+
+logger = logging.getLogger(__name__)
 
 JUDGE_SYSTEM_PROMPT = """You are an authoritative fact-checking judge in a live verification pipeline.
 Your job is to determine whether a claimed value in an AI-generated answer is CURRENT, OUTDATED, PARTIALLY OUTDATED, or UNVERIFIABLE based strictly on the provided live web evidence.
