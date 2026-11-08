@@ -1,9 +1,13 @@
+import logging
+import re
 import uuid
 from typing import List, Literal, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from app.llm.gateway import BifrostGatewayClient, GatewayStatsCollector
 from app.schemas import Claim, ClaimType, Volatility
+
+logger = logging.getLogger("extract_pipeline")
 
 EXTRACTION_SYSTEM_PROMPT = """You are an expert fact-checking analyzer. Your job is to extract atomic factual assertions from an AI-generated answer.
 For each claim, identify:
@@ -121,6 +125,74 @@ def align_span(
     return None
 
 
+def extract_heuristic_claims(answer: str) -> List[Claim]:
+    """Fallback claim extractor when LLM Gateway is temporarily unavailable."""
+    claims: List[Claim] = []
+    # Split by period followed by space or newline
+    sentence_matches = list(re.finditer(r"([^.\n]+[.!?]?)", answer))
+
+    for m in sentence_matches:
+        raw_sentence = m.group(1).strip()
+        if len(raw_sentence) < 15:
+            continue
+        start = m.start(1)
+        end = m.end(1)
+        # Re-verify offsets
+        sub = answer[start:end].strip()
+        idx = answer.find(sub, start)
+        if idx == -1:
+            idx = answer.find(sub)
+        if idx == -1:
+            continue
+        start_pos = idx
+        end_pos = idx + len(sub)
+
+        # Categorize
+        lower = sub.lower()
+        if any(w in lower for w in ["$", "pricing", "cost", "tokens", "per month"]):
+            c_type: ClaimType = "pricing"
+            entity = "Pricing Entity"
+            attr = "Price"
+            vol: Volatility = "high"
+        elif any(w in lower for w in ["ceo", "chairman", "leads", "chief executive"]):
+            c_type = "leadership"
+            entity = "Executive Leadership"
+            attr = "CEO"
+            vol = "high"
+        elif any(w in lower for w in ["version", "next.js", "node.js", "sdk", "release"]):
+            c_type = "api_version"
+            entity = "Software / SDK"
+            attr = "Version Status"
+            vol = "medium"
+        elif any(w in lower for w in ["ftc", "regulation", "act", "ban", "eu", "law"]):
+            c_type = "regulation"
+            entity = "Regulation / Agency"
+            attr = "Legal Status"
+            vol = "high"
+        else:
+            c_type = "other"
+            entity = "Factual Assertion"
+            attr = "Status"
+            vol = "medium"
+
+        claims.append(
+            Claim(
+                id=f"claim-{uuid.uuid4().hex[:8]}",
+                text=sub,
+                span_start=start_pos,
+                span_end=end_pos,
+                entity=entity,
+                attribute=attr,
+                claimed_value=sub,
+                claim_type=c_type,
+                volatility=vol,
+                is_time_sensitive=True,
+            )
+        )
+
+    return claims
+
+
 async def extract_claims(
     answer: str,
     gateway: Optional[BifrostGatewayClient] = None,
@@ -138,13 +210,20 @@ async def extract_claims(
         {"role": "user", "content": f"Analyze and extract claims from this answer:\n\n{answer}"},
     ]
 
-    extraction_res = await client.call_structured(
-        task="extract",
-        messages=messages,
-        response_model=ExtractionResponse,
-        stats_collector=stats_collector,
-        temperature=0.0,
-    )
+    try:
+        extraction_res = await client.call_structured(
+            task="extract",
+            messages=messages,
+            response_model=ExtractionResponse,
+            stats_collector=stats_collector,
+            temperature=0.0,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Bifrost Gateway extraction unavailable (%s). Using heuristic extraction fallback.",
+            exc,
+        )
+        return extract_heuristic_claims(answer)
 
     claims: List[Claim] = []
     for raw in extraction_res.claims:
@@ -171,4 +250,4 @@ async def extract_claims(
             )
         )
 
-    return claims
+    return claims if claims else extract_heuristic_claims(answer)

@@ -104,13 +104,29 @@ async def judge_claim(
         {"role": "user", "content": user_prompt},
     ]
 
-    raw_output: RawJudgeOutput = await client.call_structured(
-        task="judge",
-        messages=messages,
-        response_model=RawJudgeOutput,
-        stats_collector=stats_collector,
-        temperature=0.0,
-    )
+    try:
+        raw_output: RawJudgeOutput = await client.call_structured(
+            task="judge",
+            messages=messages,
+            response_model=RawJudgeOutput,
+            stats_collector=stats_collector,
+            temperature=0.0,
+        )
+    except Exception as exc:
+        logger.warning("Bifrost Judge call failed (%s). Falling back to unverifiable verdict.", exc)
+        freshness, breakdown, _ = calculate_claim_freshness(
+            claim=claim,
+            verdict="unverifiable",
+            evidence=evidence,
+            judge_confidence=0.3,
+        )
+        return (
+            "unverifiable",
+            None,
+            "Factual verification could not be completed via AI Gateway (Bifrost container or Groq API offline).",
+            breakdown,
+            freshness,
+        )
 
     # Compute freshness score and ScoreBreakdown deterministically in code
     freshness, breakdown, low_conf_flag = calculate_claim_freshness(

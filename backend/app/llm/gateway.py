@@ -167,14 +167,16 @@ class BifrostGatewayClient:
             self.client = AsyncOpenAI(
                 base_url=f"{self.base_url}/v1",
                 api_key=api_key or settings.GROQ_API_KEY or "bifrost-key",
-                timeout=8.0,
+                timeout=2.0,
+                max_retries=0,
             )
             # Automatic fallback client to direct Groq API if Bifrost container is not locally active
             if settings.GROQ_API_KEY:
                 self.fallback_client = AsyncOpenAI(
                     base_url="https://api.groq.com/openai/v1",
                     api_key=settings.GROQ_API_KEY,
-                    timeout=15.0,
+                    timeout=8.0,
+                    max_retries=1,
                 )
             else:
                 self.fallback_client = None

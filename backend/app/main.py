@@ -151,14 +151,11 @@ async def verify_answer(
 ) -> VerifyResponse:
     """Full live verification pipeline: extraction -> triage -> live search & extract -> judge."""
     t_start = time.perf_counter()
-    req_id = (
-        raw_request.headers.get("x-request-id")
-        if (raw_request and hasattr(raw_request, "headers"))
-        else f"req-{uuid.uuid4().hex[:8]}"
-    )
+    raw_header_id = raw_request.headers.get("x-request-id") if (raw_request and hasattr(raw_request, "headers")) else None
+    req_id = raw_header_id if raw_header_id else f"req-{uuid.uuid4().hex[:8]}"
 
     if response and hasattr(response, "headers"):
-        response.headers["X-Request-ID"] = req_id
+        response.headers["X-Request-ID"] = str(req_id)
 
     # Basic rate limiting (per client IP)
     if raw_request and hasattr(raw_request, "client") and raw_request.client:
@@ -320,11 +317,8 @@ async def verify_answer_stream(
     """Server-Sent Events streaming endpoint emitting real-time stage progress,
     progressive claim results, and final complete response.
     """
-    req_id = (
-        raw_request.headers.get("x-request-id")
-        if (raw_request and hasattr(raw_request, "headers"))
-        else f"req-{uuid.uuid4().hex[:8]}"
-    )
+    raw_header_id = raw_request.headers.get("x-request-id") if (raw_request and hasattr(raw_request, "headers")) else None
+    req_id = raw_header_id if raw_header_id else f"req-{uuid.uuid4().hex[:8]}"
 
     if raw_request and hasattr(raw_request, "client") and raw_request.client:
         client_ip = raw_request.client.host
@@ -436,6 +430,6 @@ async def verify_answer_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-            "X-Request-ID": req_id,
+            "X-Request-ID": str(req_id),
         },
     )
